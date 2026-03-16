@@ -1,0 +1,557 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Анализ осанки</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+:root{
+  --bg:#0f1117;
+  --card:rgba(255,255,255,.06);
+  --card-border:rgba(255,255,255,.08);
+  --accent:#FF6B35;
+  --accent-hover:#e85d2a;
+  --mint:#00D4AA;
+  --warn:#FFB800;
+  --danger:#FF4757;
+  --text:#e8eaed;
+  --text2:#9ea3ae;
+  --radius:16px;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{
+  font-family:'Inter',system-ui,sans-serif;
+  background:var(--bg);
+  color:var(--text);
+  min-height:100vh;
+  overflow-x:hidden;
+  -webkit-tap-highlight-color:transparent;
+  -webkit-font-smoothing:antialiased;
+}
+
+/* ---- screens ---- */
+.screen{display:none;min-height:100vh;flex-direction:column}
+.screen.active{display:flex}
+
+/* ---- screen 1: welcome ---- */
+#screen-welcome{padding:32px 20px 120px;justify-content:center;align-items:center;text-align:center}
+.welcome-icon{font-size:64px;margin-bottom:16px}
+.welcome-title{font-size:28px;font-weight:800;line-height:1.2;margin-bottom:8px}
+.welcome-sub{font-size:15px;color:var(--text2);max-width:320px;margin-bottom:32px;line-height:1.5}
+.instructions{
+  background:var(--card);
+  border:1px solid var(--card-border);
+  border-radius:var(--radius);
+  padding:20px 20px 20px 24px;
+  text-align:left;
+  width:100%;
+  max-width:400px;
+}
+.instructions h3{font-size:14px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--accent);margin-bottom:14px}
+.instructions ol{list-style:none;counter-reset:step;padding:0}
+.instructions li{
+  counter-increment:step;
+  position:relative;
+  padding-left:32px;
+  font-size:14px;
+  line-height:1.6;
+  color:var(--text2);
+  margin-bottom:10px;
+}
+.instructions li::before{
+  content:counter(step);
+  position:absolute;left:0;top:1px;
+  width:22px;height:22px;
+  border-radius:50%;
+  background:var(--accent);
+  color:#fff;font-size:12px;font-weight:700;
+  display:flex;align-items:center;justify-content:center;
+}
+
+/* ---- screen 2: camera ---- */
+#screen-camera{padding:0;position:relative;background:#000}
+#camera-video{width:100%;height:100vh;object-fit:cover;display:block}
+#camera-canvas{display:none}
+.cam-overlay{
+  position:absolute;top:0;left:0;right:0;
+  padding:16px;
+  pointer-events:none;
+  z-index:2;
+}
+.status-bar{
+  background:rgba(15,17,23,.75);
+  backdrop-filter:blur(12px);
+  -webkit-backdrop-filter:blur(12px);
+  border-radius:var(--radius);
+  padding:14px 18px;
+  display:flex;align-items:center;gap:10px;
+}
+.status-dot{
+  width:10px;height:10px;border-radius:50%;flex-shrink:0;
+  transition:background .3s;
+}
+.status-dot.waiting{background:var(--warn);animation:pulse 1.4s ease-in-out infinite}
+.status-dot.green{background:var(--mint);animation:none}
+.status-dot.yellow{background:var(--warn);animation:none}
+.status-dot.red{background:var(--danger);animation:none}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(.7)}}
+#status-text{font-size:13px;font-weight:500;color:var(--text)}
+#timer{margin-left:auto;font-size:14px;font-weight:700;font-variant-numeric:tabular-nums;color:var(--text2)}
+#frame-counter{font-size:12px;color:var(--text2);margin-left:8px}
+
+.cam-hint{
+  position:absolute;bottom:100px;left:0;right:0;
+  text-align:center;
+  pointer-events:none;z-index:2;
+}
+#cam-hint-text{
+  display:inline-block;
+  background:rgba(15,17,23,.7);
+  backdrop-filter:blur(8px);
+  -webkit-backdrop-filter:blur(8px);
+  border-radius:12px;
+  padding:10px 20px;
+  font-size:14px;font-weight:500;color:var(--text2);
+  transition:opacity .3s;
+}
+
+/* ---- screen 3: report ---- */
+#screen-report{padding:24px 20px 120px}
+.report-header{text-align:center;margin-bottom:28px}
+.report-icon{font-size:48px;margin-bottom:8px}
+.report-title{font-size:22px;font-weight:800;margin-bottom:4px}
+.report-sub{font-size:14px;color:var(--text2)}
+
+.section-title{
+  font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;
+  color:var(--accent);margin:24px 0 12px;
+}
+
+/* metric cards */
+.metric-card{
+  background:var(--card);
+  border:1px solid var(--card-border);
+  border-radius:var(--radius);
+  padding:14px 16px;
+  margin-bottom:10px;
+  border-left:4px solid var(--mint);
+  display:flex;justify-content:space-between;align-items:center;
+}
+.metric-card.warning{border-left-color:var(--warn)}
+.metric-card.problem{border-left-color:var(--danger)}
+.metric-label{font-size:14px;font-weight:600}
+.metric-badge{
+  font-size:11px;font-weight:700;text-transform:uppercase;
+  padding:4px 10px;border-radius:8px;
+}
+.metric-badge.ok{background:rgba(0,212,170,.15);color:var(--mint)}
+.metric-badge.warning{background:rgba(255,184,0,.15);color:var(--warn)}
+.metric-badge.problem{background:rgba(255,71,87,.15);color:var(--danger)}
+
+/* issue cards */
+.issue-card{
+  background:var(--card);
+  border:1px solid var(--card-border);
+  border-radius:var(--radius);
+  padding:16px;margin-bottom:10px;
+}
+.issue-card h4{font-size:15px;font-weight:700;margin-bottom:6px}
+.issue-card p{font-size:13px;color:var(--text2);line-height:1.5}
+
+/* syndrome cards */
+.syndrome-card{
+  background:rgba(255,107,53,.08);
+  border:1px solid rgba(255,107,53,.2);
+  border-radius:var(--radius);
+  padding:16px;margin-bottom:10px;
+}
+.syndrome-card h4{font-size:15px;font-weight:700;color:var(--accent);margin-bottom:6px}
+.syndrome-card p{font-size:13px;color:var(--text2);line-height:1.5}
+
+/* exercise list */
+.exercise-item{
+  background:var(--card);
+  border:1px solid var(--card-border);
+  border-radius:var(--radius);
+  padding:14px 16px;margin-bottom:8px;
+  display:flex;gap:12px;align-items:flex-start;
+  font-size:13px;line-height:1.5;color:var(--text2);
+}
+.exercise-num{
+  flex-shrink:0;width:24px;height:24px;
+  border-radius:50%;background:var(--mint);
+  color:#0f1117;font-size:12px;font-weight:700;
+  display:flex;align-items:center;justify-content:center;
+}
+
+/* snapshot carousel */
+.snapshots-carousel{
+  display:flex;overflow-x:auto;
+  scroll-snap-type:x mandatory;
+  gap:12px;padding-bottom:8px;
+  -webkit-overflow-scrolling:touch;
+  scrollbar-width:none;
+}
+.snapshots-carousel::-webkit-scrollbar{display:none}
+.snapshots-carousel img{
+  flex-shrink:0;width:85%;
+  border-radius:12px;
+  scroll-snap-align:center;
+}
+
+/* empty state */
+.empty-state{text-align:center;padding:40px 20px;color:var(--text2);font-size:14px}
+
+/* loading */
+.loading-overlay{
+  position:fixed;inset:0;z-index:100;
+  background:var(--bg);
+  display:flex;flex-direction:column;
+  align-items:center;justify-content:center;
+  gap:16px;
+}
+.spinner{
+  width:40px;height:40px;
+  border:3px solid var(--card-border);
+  border-top-color:var(--accent);
+  border-radius:50%;
+  animation:spin .8s linear infinite;
+}
+@keyframes spin{to{transform:rotate(360deg)}}
+.loading-text{font-size:14px;color:var(--text2)}
+</style>
+</head>
+<body>
+
+<!-- ============ Screen 1: Welcome ============ -->
+<div id="screen-welcome" class="screen active">
+  <div class="welcome-icon">🏃‍♂️</div>
+  <h1 class="welcome-title">Анализ осанки</h1>
+  <p class="welcome-sub">Сделайте проходку перед камерой — узнайте о своей осанке за 30 секунд</p>
+  <div class="instructions">
+    <h3>Как это работает</h3>
+    <ol>
+      <li>Поставьте телефон на уровне пояса</li>
+      <li>Отойдите на 3–4 метра от камеры</li>
+      <li>Пройдитесь перед камерой естественным шагом</li>
+      <li>Мы в реальном времени отслеживаем ключевые точки тела</li>
+      <li>По завершении вы получите подробный отчёт</li>
+    </ol>
+  </div>
+</div>
+
+<!-- ============ Screen 2: Camera ============ -->
+<div id="screen-camera" class="screen">
+  <video id="camera-video" autoplay playsinline muted></video>
+  <canvas id="camera-canvas"></canvas>
+  <div class="cam-overlay">
+    <div class="status-bar">
+      <div id="status-dot" class="status-dot waiting"></div>
+      <span id="status-text">Ожидание…</span>
+      <span id="timer">00:00</span>
+      <span id="frame-counter"></span>
+    </div>
+  </div>
+  <div class="cam-hint">
+    <span id="cam-hint-text">Войдите в кадр целиком</span>
+  </div>
+</div>
+
+<!-- ============ Screen 3: Report ============ -->
+<div id="screen-report" class="screen">
+  <div id="report-content"></div>
+</div>
+
+<!-- ============ Loading overlay ============ -->
+<div id="loading" class="loading-overlay" style="display:none">
+  <div class="spinner"></div>
+  <div class="loading-text">Формируем отчёт…</div>
+</div>
+
+<script>
+/* ====== Telegram WebApp SDK ====== */
+const tg = window.Telegram && window.Telegram.WebApp;
+if (tg) { tg.ready(); tg.expand(); }
+
+/* ====== State ====== */
+let currentScreen = 'welcome';
+let sessionId = null;
+let stream = null;
+let analyzeLoop = null;
+let timerInterval = null;
+let timerSec = 0;
+let sending = false;
+
+const $ = id => document.getElementById(id);
+
+function apiFetch(url, opts = {}) {
+  const h = Object.assign({}, opts.headers || {}, { 'Bypass-Tunnel-Reminder': 'true' });
+  return fetch(url, Object.assign({}, opts, { headers: h }));
+}
+
+/* ====== Screen management ====== */
+function showScreen(name) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  $(('screen-' + name)).classList.add('active');
+  currentScreen = name;
+  updateMainButton();
+  updateBackButton();
+}
+
+function updateMainButton() {
+  if (!tg) return;
+  const mb = tg.MainButton;
+  if (currentScreen === 'welcome') {
+    mb.setParams({ text: 'НАЧАТЬ АНАЛИЗ', color: '#FF6B35', text_color: '#FFFFFF' });
+    mb.show();
+  } else if (currentScreen === 'camera') {
+    mb.setParams({ text: 'ЗАВЕРШИТЬ АНАЛИЗ', color: '#FF4757', text_color: '#FFFFFF' });
+    mb.show();
+  } else if (currentScreen === 'report') {
+    mb.setParams({ text: 'ПРОЙТИ ЕЩЁ РАЗ', color: '#FF6B35', text_color: '#FFFFFF' });
+    mb.show();
+  }
+}
+
+function updateBackButton() {
+  if (!tg) return;
+  if (currentScreen === 'report') {
+    tg.BackButton.show();
+  } else {
+    tg.BackButton.hide();
+  }
+}
+
+/* ====== MainButton click ====== */
+function onMainButton() {
+  if (currentScreen === 'welcome') startAnalysis();
+  else if (currentScreen === 'camera') stopAnalysis();
+  else if (currentScreen === 'report') restart();
+}
+
+if (tg) {
+  tg.MainButton.onClick(onMainButton);
+  tg.BackButton.onClick(() => restart());
+}
+
+/* ====== Screen 1 → 2: Start ====== */
+async function startAnalysis() {
+  try {
+    stream = await getCamera();
+  } catch (e) {
+    alert('Не удалось получить доступ к камере. Проверьте разрешения.');
+    return;
+  }
+
+  $('camera-video').srcObject = stream;
+  showScreen('camera');
+
+  timerSec = 0;
+  updateTimerDisplay();
+  timerInterval = setInterval(() => { timerSec++; updateTimerDisplay(); }, 1000);
+
+  try {
+    const resp = await apiFetch('/live/start', { method: 'POST' });
+    const json = await resp.json();
+    sessionId = json.session_id;
+  } catch (e) {
+    console.warn('Failed to start session, retrying...', e);
+    try {
+      const resp = await apiFetch('/live/start', { method: 'POST' });
+      const json = await resp.json();
+      sessionId = json.session_id;
+    } catch (_) { /* frames will be sent without session, server will return 404 */ }
+  }
+
+  analyzeLoop = setInterval(sendFrame, 800);
+}
+
+async function getCamera() {
+  const opts = { video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false };
+  try {
+    return await navigator.mediaDevices.getUserMedia(opts);
+  } catch (_) {
+    return await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+  }
+}
+
+/* ====== Send frame ====== */
+async function sendFrame() {
+  if (sending) return;
+  sending = true;
+
+  try {
+    const video = $('camera-video');
+    const canvas = $('camera-canvas');
+    if (video.readyState < 2) return;
+
+    const scale = Math.min(1, 640 / video.videoWidth);
+    canvas.width = Math.round(video.videoWidth * scale);
+    canvas.height = Math.round(video.videoHeight * scale);
+    canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.6);
+
+    const resp = await apiFetch('/live/frame', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ session_id: sessionId, frame: dataUrl }),
+    });
+    const json = await resp.json();
+    applyFrameResult(json);
+  } catch (_) { /* network hiccup, skip */ }
+  finally { sending = false; }
+}
+
+function applyFrameResult(data) {
+  const dot = $('status-dot');
+  const text = $('status-text');
+  const hint = $('cam-hint-text');
+  const counter = $('frame-counter');
+
+  if (data.status === 'waiting') {
+    dot.className = 'status-dot waiting';
+    text.textContent = 'Ожидание…';
+    hint.textContent = 'Войдите в кадр целиком';
+    hint.style.opacity = '1';
+    return;
+  }
+
+  dot.className = 'status-dot ' + data.status;
+  hint.style.opacity = '0';
+
+  if (data.status === 'green') text.textContent = 'Осанка в норме';
+  else if (data.status === 'yellow') text.textContent = 'Есть отклонения';
+  else text.textContent = 'Обнаружены проблемы';
+
+  if (data.frames_analyzed) {
+    counter.textContent = data.frames_analyzed + ' кадр.';
+  }
+}
+
+function updateTimerDisplay() {
+  const m = String(Math.floor(timerSec / 60)).padStart(2, '0');
+  const s = String(timerSec % 60).padStart(2, '0');
+  $('timer').textContent = m + ':' + s;
+}
+
+/* ====== Screen 2 → 3: Stop ====== */
+async function stopAnalysis() {
+  clearInterval(analyzeLoop);
+  clearInterval(timerInterval);
+  analyzeLoop = null;
+
+  if (stream) {
+    stream.getTracks().forEach(t => t.stop());
+    stream = null;
+  }
+
+  $('loading').style.display = 'flex';
+
+  try {
+    const resp = await apiFetch('/live/stop', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ session_id: sessionId }),
+    });
+    const report = await resp.json();
+    buildReport(report);
+  } catch (e) {
+    $('report-content').innerHTML = '<div class="empty-state">Не удалось получить отчёт. Попробуйте ещё раз.</div>';
+  }
+
+  $('loading').style.display = 'none';
+  showScreen('report');
+}
+
+/* ====== Screen 3 → 1: Restart ====== */
+function restart() {
+  sessionId = null;
+  $('report-content').innerHTML = '';
+  $('status-dot').className = 'status-dot waiting';
+  $('status-text').textContent = 'Ожидание…';
+  $('cam-hint-text').textContent = 'Войдите в кадр целиком';
+  $('cam-hint-text').style.opacity = '1';
+  $('frame-counter').textContent = '';
+  showScreen('welcome');
+}
+
+/* ====== Build report HTML ====== */
+function buildReport(data) {
+  const el = $('report-content');
+
+  if (!data.frames_analyzed) {
+    el.innerHTML = '<div class="empty-state">Недостаточно данных для анализа.<br>Попробуйте ещё раз и убедитесь, что вы полностью в кадре.</div>';
+    return;
+  }
+
+  const statusMap = { ok: 'Норма', warning: 'Внимание', problem: 'Проблема' };
+  const iconMap = { ok: '✅', warning: '⚠️', problem: '🔴' };
+  const allOk = Object.values(data.summary).every(m => m.status === 'ok');
+
+  let html = '<div class="report-header">';
+  html += '<div class="report-icon">' + (allOk ? '🎉' : '📋') + '</div>';
+  html += '<h2 class="report-title">' + (allOk ? 'Отличная осанка!' : 'Результаты анализа') + '</h2>';
+  html += '<p class="report-sub">Проанализировано кадров: ' + data.frames_analyzed + ' · ' + formatTime(timerSec) + '</p>';
+  html += '</div>';
+
+  /* Metrics */
+  html += '<div class="section-title">Метрики</div>';
+  for (const [key, m] of Object.entries(data.summary)) {
+    html += '<div class="metric-card ' + m.status + '">';
+    html += '<span class="metric-label">' + m.label + '</span>';
+    html += '<span class="metric-badge ' + m.status + '">' + statusMap[m.status] + '</span>';
+    html += '</div>';
+  }
+
+  /* Issues */
+  if (data.issues && data.issues.length) {
+    html += '<div class="section-title">Обнаруженные проблемы</div>';
+    for (const iss of data.issues) {
+      html += '<div class="issue-card"><h4>' + iss.title + '</h4><p>' + iss.description + '</p></div>';
+    }
+  }
+
+  /* Syndromes */
+  if (data.syndromes && data.syndromes.length) {
+    html += '<div class="section-title">Возможные синдромы</div>';
+    for (const syn of data.syndromes) {
+      html += '<div class="syndrome-card"><h4>' + syn.name + '</h4><p>' + syn.description + '</p></div>';
+    }
+  }
+
+  /* Exercises */
+  if (data.exercises && data.exercises.length) {
+    html += '<div class="section-title">Рекомендуемые упражнения</div>';
+    data.exercises.forEach((ex, i) => {
+      html += '<div class="exercise-item"><div class="exercise-num">' + (i + 1) + '</div><span>' + ex + '</span></div>';
+    });
+  }
+
+  /* Snapshots */
+  if (data.snapshots && data.snapshots.length) {
+    html += '<div class="section-title">Снимки с проблемами</div>';
+    html += '<div class="snapshots-carousel">';
+    for (const snap of data.snapshots) {
+      html += '<img src="data:image/jpeg;base64,' + snap + '" alt="snapshot">';
+    }
+    html += '</div>';
+  }
+
+  el.innerHTML = html;
+}
+
+function formatTime(sec) {
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return (m ? m + ' мин ' : '') + s + ' сек';
+}
+
+/* ====== Init ====== */
+showScreen('welcome');
+</script>
+</body>
+</html>

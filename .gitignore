@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+*.log
+.env
+.venv/
+venv/
+
+.vscode/
+.idea/
+
+node_modules/
+dist/
+build/
+
+.cursor/
