@@ -13,6 +13,7 @@ import uuid
 from pathlib import Path
 from threading import Lock
 from typing import Optional, Tuple
+from urllib.request import urlretrieve
 
 import cv2
 import mediapipe as mp
@@ -29,6 +30,15 @@ app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024  # 16 MB
 ALLOWED_EXTENSIONS = {"jpg", "jpeg", "png"}
 
 MODEL_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "pose_landmarker.task")
+POSE_MODEL_URL = "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/latest/pose_landmarker_lite.task"
+
+
+def _ensure_model():
+    if not os.path.isfile(MODEL_PATH):
+        urlretrieve(POSE_MODEL_URL, MODEL_PATH)
+
+
+_ensure_model()
 
 # ---------------------------------------------------------------------------
 #  Live-анализ: сессии и глобальный детектор
