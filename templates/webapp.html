@@ -118,6 +118,47 @@ body{
   transition:opacity .3s;
 }
 
+.browser-controls{
+  position:fixed;
+  left:16px;
+  right:16px;
+  bottom:16px;
+  z-index:4;
+  display:none;
+}
+.browser-controls.active{display:block}
+.browser-panel{
+  background:rgba(15,17,23,.88);
+  border:1px solid var(--card-border);
+  border-radius:16px;
+  padding:12px;
+  backdrop-filter:blur(12px);
+  -webkit-backdrop-filter:blur(12px);
+}
+.browser-actions{
+  display:flex;
+  gap:10px;
+}
+.browser-actions.stack{flex-direction:column}
+.browser-btn{
+  width:100%;
+  min-height:52px;
+  border:none;
+  border-radius:12px;
+  padding:14px 16px;
+  font:inherit;
+  font-size:15px;
+  font-weight:700;
+  cursor:pointer;
+  transition:transform .15s ease, background .2s ease, opacity .2s ease;
+}
+.browser-btn:active{transform:scale(.98)}
+.browser-btn.primary{background:var(--accent);color:#fff}
+.browser-btn.primary:hover{background:var(--accent-hover)}
+.browser-btn.secondary{background:rgba(255,255,255,.08);color:var(--text)}
+.browser-btn.secondary:hover{background:rgba(255,255,255,.12)}
+.hidden{display:none!important}
+
 /* ---- screen 3: report ---- */
 #screen-report{padding:24px 20px 120px}
 .report-header{text-align:center;margin-bottom:28px}
@@ -271,12 +312,21 @@ body{
   <div class="loading-text">Формируем отчёт…</div>
 </div>
 
+<div id="browser-controls" class="browser-controls">
+  <div class="browser-panel">
+    <button id="browser-start" class="browser-btn primary hidden" type="button">Начать анализ</button>
+    <div id="browser-camera-actions" class="browser-actions hidden">
+      <button id="switch-camera-btn" class="browser-btn secondary" type="button">Переключить камеру</button>
+      <button id="browser-stop" class="browser-btn primary" type="button">Завершить анализ</button>
+    </div>
+    <button id="browser-restart" class="browser-btn primary hidden" type="button">Пройти ещё раз</button>
+  </div>
+</div>
 <script>
-/* ====== Telegram WebApp SDK ====== */
 const tg = window.Telegram && window.Telegram.WebApp;
+const isTelegram = !!tg;
 if (tg) { tg.ready(); tg.expand(); }
 
-/* ====== State ====== */
 let currentScreen = 'welcome';
 let sessionId = null;
 let stream = null;
@@ -284,6 +334,7 @@ let analyzeLoop = null;
 let timerInterval = null;
 let timerSec = 0;
 let sending = false;
+let currentFacingMode = 'environment';
 
 const $ = id => document.getElementById(id);
 
@@ -292,13 +343,31 @@ function apiFetch(url, opts = {}) {
   return fetch(url, Object.assign({}, opts, { headers: h }));
 }
 
-/* ====== Screen management ====== */
+function updateSwitchCameraButton() {
+  const btn = $('switch-camera-btn');
+  if (!btn) return;
+  btn.textContent = currentFacingMode === 'environment' ? 'Фронтальная камера' : 'Основная камера';
+}
+
+function updateBrowserControls() {
+  const root = $('browser-controls');
+  if (!root) return;
+  root.classList.toggle('active', !isTelegram);
+  if (isTelegram) return;
+
+  $('browser-start').classList.toggle('hidden', currentScreen !== 'welcome');
+  $('browser-camera-actions').classList.toggle('hidden', currentScreen !== 'camera');
+  $('browser-restart').classList.toggle('hidden', currentScreen !== 'report');
+  updateSwitchCameraButton();
+}
+
 function showScreen(name) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
-  $(('screen-' + name)).classList.add('active');
+  $('screen-' + name).classList.add('active');
   currentScreen = name;
   updateMainButton();
   updateBackButton();
+  updateBrowserControls();
 }
 
 function updateMainButton() {
@@ -318,14 +387,10 @@ function updateMainButton() {
 
 function updateBackButton() {
   if (!tg) return;
-  if (currentScreen === 'report') {
-    tg.BackButton.show();
-  } else {
-    tg.BackButton.hide();
-  }
+  if (currentScreen === 'report') tg.BackButton.show();
+  else tg.BackButton.hide();
 }
 
-/* ====== MainButton click ====== */
 function onMainButton() {
   if (currentScreen === 'welcome') startAnalysis();
   else if (currentScreen === 'camera') stopAnalysis();
@@ -337,8 +402,14 @@ if (tg) {
   tg.BackButton.onClick(() => restart());
 }
 
-/* ====== Screen 1 → 2: Start ====== */
+$('browser-start').addEventListener('click', startAnalysis);
+$('browser-stop').addEventListener('click', stopAnalysis);
+$('browser-restart').addEventListener('click', restart);
+$('switch-camera-btn').addEventListener('click', switchCamera);
+
 async function startAnalysis() {
+  if (analyzeLoop) return;
+
   try {
     stream = await getCamera();
   } catch (e) {
@@ -363,22 +434,51 @@ async function startAnalysis() {
       const resp = await apiFetch('/live/start', { method: 'POST' });
       const json = await resp.json();
       sessionId = json.session_id;
-    } catch (_) { /* frames will be sent without session, server will return 404 */ }
+    } catch (_) {}
   }
 
   analyzeLoop = setInterval(sendFrame, 800);
 }
 
 async function getCamera() {
-  const opts = { video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false };
+  const opts = {
+    video: {
+      facingMode: { ideal: currentFacingMode },
+      width: { ideal: 1280 },
+      height: { ideal: 720 }
+    },
+    audio: false
+  };
   try {
     return await navigator.mediaDevices.getUserMedia(opts);
   } catch (_) {
-    return await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+    return await navigator.mediaDevices.getUserMedia({
+      video: { width: { ideal: 1280 }, height: { ideal: 720 } },
+      audio: false
+    });
   }
 }
 
-/* ====== Send frame ====== */
+async function switchCamera() {
+  const prevFacingMode = currentFacingMode;
+  currentFacingMode = currentFacingMode === 'environment' ? 'user' : 'environment';
+  updateSwitchCameraButton();
+
+  if (currentScreen !== 'camera') return;
+
+  try {
+    if (stream) stream.getTracks().forEach(t => t.stop());
+    stream = await getCamera();
+    $('camera-video').srcObject = stream;
+    $('cam-hint-text').textContent = currentFacingMode === 'user' ? 'Фронтальная камера активна' : 'Основная камера активна';
+    $('cam-hint-text').style.opacity = '1';
+  } catch (e) {
+    currentFacingMode = prevFacingMode;
+    updateSwitchCameraButton();
+    alert('Не удалось переключить камеру.');
+  }
+}
+
 async function sendFrame() {
   if (sending) return;
   sending = true;
@@ -402,8 +502,10 @@ async function sendFrame() {
     });
     const json = await resp.json();
     applyFrameResult(json);
-  } catch (_) { /* network hiccup, skip */ }
-  finally { sending = false; }
+  } catch (_) {
+  } finally {
+    sending = false;
+  }
 }
 
 function applyFrameResult(data) {
@@ -427,9 +529,7 @@ function applyFrameResult(data) {
   else if (data.status === 'yellow') text.textContent = 'Есть отклонения';
   else text.textContent = 'Обнаружены проблемы';
 
-  if (data.frames_analyzed) {
-    counter.textContent = data.frames_analyzed + ' кадр.';
-  }
+  if (data.frames_analyzed) counter.textContent = data.frames_analyzed + ' кадр.';
 }
 
 function updateTimerDisplay() {
@@ -438,11 +538,11 @@ function updateTimerDisplay() {
   $('timer').textContent = m + ':' + s;
 }
 
-/* ====== Screen 2 → 3: Stop ====== */
 async function stopAnalysis() {
   clearInterval(analyzeLoop);
   clearInterval(timerInterval);
   analyzeLoop = null;
+  timerInterval = null;
 
   if (stream) {
     stream.getTracks().forEach(t => t.stop());
@@ -467,9 +567,18 @@ async function stopAnalysis() {
   showScreen('report');
 }
 
-/* ====== Screen 3 → 1: Restart ====== */
 function restart() {
+  clearInterval(analyzeLoop);
+  clearInterval(timerInterval);
+  analyzeLoop = null;
+  timerInterval = null;
   sessionId = null;
+
+  if (stream) {
+    stream.getTracks().forEach(t => t.stop());
+    stream = null;
+  }
+
   $('report-content').innerHTML = '';
   $('status-dot').className = 'status-dot waiting';
   $('status-text').textContent = 'Ожидание…';
@@ -479,7 +588,6 @@ function restart() {
   showScreen('welcome');
 }
 
-/* ====== Build report HTML ====== */
 function buildReport(data) {
   const el = $('report-content');
 
@@ -489,7 +597,6 @@ function buildReport(data) {
   }
 
   const statusMap = { ok: 'Норма', warning: 'Внимание', problem: 'Проблема' };
-  const iconMap = { ok: '✅', warning: '⚠️', problem: '🔴' };
   const allOk = Object.values(data.summary).every(m => m.status === 'ok');
 
   let html = '<div class="report-header">';
@@ -498,16 +605,14 @@ function buildReport(data) {
   html += '<p class="report-sub">Проанализировано кадров: ' + data.frames_analyzed + ' · ' + formatTime(timerSec) + '</p>';
   html += '</div>';
 
-  /* Metrics */
   html += '<div class="section-title">Метрики</div>';
-  for (const [key, m] of Object.entries(data.summary)) {
+  for (const [, m] of Object.entries(data.summary)) {
     html += '<div class="metric-card ' + m.status + '">';
     html += '<span class="metric-label">' + m.label + '</span>';
     html += '<span class="metric-badge ' + m.status + '">' + statusMap[m.status] + '</span>';
     html += '</div>';
   }
 
-  /* Issues */
   if (data.issues && data.issues.length) {
     html += '<div class="section-title">Обнаруженные проблемы</div>';
     for (const iss of data.issues) {
@@ -515,7 +620,6 @@ function buildReport(data) {
     }
   }
 
-  /* Syndromes */
   if (data.syndromes && data.syndromes.length) {
     html += '<div class="section-title">Возможные синдромы</div>';
     for (const syn of data.syndromes) {
@@ -523,7 +627,6 @@ function buildReport(data) {
     }
   }
 
-  /* Exercises */
   if (data.exercises && data.exercises.length) {
     html += '<div class="section-title">Рекомендуемые упражнения</div>';
     data.exercises.forEach((ex, i) => {
@@ -531,7 +634,6 @@ function buildReport(data) {
     });
   }
 
-  /* Snapshots */
   if (data.snapshots && data.snapshots.length) {
     html += '<div class="section-title">Снимки с проблемами</div>';
     html += '<div class="snapshots-carousel">';
@@ -550,8 +652,9 @@ function formatTime(sec) {
   return (m ? m + ' мин ' : '') + s + ' сек';
 }
 
-/* ====== Init ====== */
+updateSwitchCameraButton();
 showScreen('welcome');
 </script>
+
 </body>
 </html>
