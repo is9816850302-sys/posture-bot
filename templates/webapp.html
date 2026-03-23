@@ -102,6 +102,29 @@ body{
 #timer{margin-left:auto;font-size:14px;font-weight:700;font-variant-numeric:tabular-nums;color:var(--text2)}
 #frame-counter{font-size:12px;color:var(--text2);margin-left:8px}
 
+/* Telegram WebView: переключение камеры над зоной MainButton */
+.tg-camera-switch{
+  position:fixed;
+  left:50%;
+  transform:translateX(-50%);
+  bottom:calc(72px + env(safe-area-inset-bottom, 0px));
+  z-index:5;
+  max-width:min(92vw, 360px);
+  padding:12px 18px;
+  border:none;
+  border-radius:12px;
+  font:inherit;font-size:14px;font-weight:700;
+  cursor:pointer;
+  background:rgba(255,255,255,.12);
+  color:var(--text);
+  border:1px solid var(--card-border);
+  backdrop-filter:blur(10px);
+  -webkit-backdrop-filter:blur(10px);
+  box-shadow:0 4px 20px rgba(0,0,0,.35);
+}
+.tg-camera-switch:active{transform:translateX(-50%) scale(.98)}
+.tg-camera-switch.hidden{display:none!important}
+
 .cam-hint{
   position:absolute;bottom:100px;left:0;right:0;
   text-align:center;
@@ -299,6 +322,7 @@ body{
   <div class="cam-hint">
     <span id="cam-hint-text">Войдите в кадр целиком</span>
   </div>
+  <button type="button" id="tg-switch-camera" class="tg-camera-switch hidden" aria-label="Переключить камеру">Фронтальная камера</button>
 </div>
 
 <!-- ============ Screen 3: Report ============ -->
@@ -323,9 +347,20 @@ body{
   </div>
 </div>
 <script>
+const _urlParams = new URLSearchParams(window.location.search || '');
+const forceBrowserUi = _urlParams.get('browser') === '1' || _urlParams.get('web') === '1';
+
 const tg = window.Telegram && window.Telegram.WebApp;
-const isTelegram = !!tg;
-if (tg) { tg.ready(); tg.expand(); }
+/* telegram-web-app.js создаёт WebApp и в обычном браузере — не считаем это Telegram */
+const _unsafeUser = tg && tg.initDataUnsafe && tg.initDataUnsafe.user;
+const _hasRealUser = _unsafeUser && typeof _unsafeUser.id === 'number';
+const isTelegramMiniApp = !!(tg && (String(tg.initData || '').length > 0 || _hasRealUser));
+const isTelegram = forceBrowserUi ? false : isTelegramMiniApp;
+
+if (tg) {
+  try { tg.ready(); } catch (_) {}
+  try { tg.expand(); } catch (_) {}
+}
 
 let currentScreen = 'welcome';
 let sessionId = null;
@@ -343,10 +378,15 @@ function apiFetch(url, opts = {}) {
   return fetch(url, Object.assign({}, opts, { headers: h }));
 }
 
+function cameraSwitchLabel() {
+  return currentFacingMode === 'environment' ? 'Фронтальная камера' : 'Основная камера';
+}
+
 function updateSwitchCameraButton() {
   const btn = $('switch-camera-btn');
-  if (!btn) return;
-  btn.textContent = currentFacingMode === 'environment' ? 'Фронтальная камера' : 'Основная камера';
+  if (btn) btn.textContent = cameraSwitchLabel();
+  const tgBtn = $('tg-switch-camera');
+  if (tgBtn) tgBtn.textContent = cameraSwitchLabel();
 }
 
 function updateBrowserControls() {
@@ -368,13 +408,50 @@ function showScreen(name) {
   updateMainButton();
   updateBackButton();
   updateBrowserControls();
+  updateTelegramCameraSwitchUi();
+}
+
+function updateTelegramCameraSwitchUi() {
+  const floatBtn = $('tg-switch-camera');
+  if (!tg || !isTelegram) {
+    try {
+      if (tg && tg.SecondaryButton && typeof tg.SecondaryButton.hide === 'function') tg.SecondaryButton.hide();
+    } catch (_) {}
+    if (floatBtn) floatBtn.classList.add('hidden');
+    return;
+  }
+  const label = cameraSwitchLabel();
+  if (currentScreen === 'camera') {
+    const sb = tg.SecondaryButton;
+    const hasSecondary = sb && typeof sb.setParams === 'function' && typeof sb.show === 'function';
+    if (hasSecondary) {
+      try {
+        sb.setParams({ text: label, color: 'rgba(255,255,255,.12)', text_color: '#e8eaed' });
+        sb.show();
+        if (floatBtn) floatBtn.classList.add('hidden');
+        return;
+      } catch (_) {}
+    }
+    if (floatBtn) {
+      floatBtn.textContent = label;
+      floatBtn.classList.remove('hidden');
+    }
+    try {
+      if (sb && typeof sb.hide === 'function') sb.hide();
+    } catch (_) {}
+  } else {
+    try {
+      if (tg.SecondaryButton && typeof tg.SecondaryButton.hide === 'function') tg.SecondaryButton.hide();
+    } catch (_) {}
+    if (floatBtn) floatBtn.classList.add('hidden');
+  }
 }
 
 function updateMainButton() {
-  if (!tg) return;
+  if (!tg || !isTelegram) return;
   const mb = tg.MainButton;
   if (currentScreen === 'welcome') {
-    mb.setParams({ text: 'НАЧАТЬ АНАЛИЗ 12345', color: '#FF6B35', text_color: '#FFFFFF' });
+    mb.setParams({ text: 'НАЧАТЬ АНАЛИЗ', color: '#FF6B35', text_color: '#FFFFFF' });
     mb.show();
   } else if (currentScreen === 'camera') {
     mb.setParams({ text: 'ЗАВЕРШИТЬ АНАЛИЗ', color: '#FF4757', text_color: '#FFFFFF' });
@@ -386,7 +463,7 @@ function updateMainButton() {
 }
 
 function updateBackButton() {
-  if (!tg) return;
+  if (!tg || !isTelegram) return;
   if (currentScreen === 'report') tg.BackButton.show();
   else tg.BackButton.hide();
 }
@@ -397,15 +474,22 @@ function onMainButton() {
   else if (currentScreen === 'report') restart();
 }
 
-if (tg) {
-  tg.MainButton.onClick(onMainButton);
-  tg.BackButton.onClick(() => restart());
+if (tg && isTelegram) {
+  try {
+    tg.MainButton.onClick(onMainButton);
+    tg.BackButton.onClick(() => restart());
+    if (tg.SecondaryButton && typeof tg.SecondaryButton.onClick === 'function') {
+      tg.SecondaryButton.onClick(() => switchCamera());
+    }
+  } catch (_) {}
 }
 
 $('browser-start').addEventListener('click', startAnalysis);
 $('browser-stop').addEventListener('click', stopAnalysis);
 $('browser-restart').addEventListener('click', restart);
 $('switch-camera-btn').addEventListener('click', switchCamera);
+const tgSwitchCam = $('tg-switch-camera');
+if (tgSwitchCam) tgSwitchCam.addEventListener('click', () => switchCamera());
 
 async function startAnalysis() {
   if (analyzeLoop) return;
@@ -472,9 +556,11 @@ async function switchCamera() {
     $('camera-video').srcObject = stream;
     $('cam-hint-text').textContent = currentFacingMode === 'user' ? 'Фронтальная камера активна' : 'Основная камера активна';
     $('cam-hint-text').style.opacity = '1';
+    updateTelegramCameraSwitchUi();
   } catch (e) {
     currentFacingMode = prevFacingMode;
     updateSwitchCameraButton();
+    updateTelegramCameraSwitchUi();
     alert('Не удалось переключить камеру.');
   }
 }
