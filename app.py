@@ -334,6 +334,11 @@ def telegram_webapp():
     return render_template("webapp.html")
 
 
+@app.route("/web")
+def browser_webapp():
+    return render_template("webapp.html")
+
+
 # ---------------------------------------------------------------------------
 #  Live-анализ (используется из webapp.html)
 # ---------------------------------------------------------------------------
